@@ -1,1 +1,43 @@
 # Bot_Trading_Binomo
+
+Uso del Software
+1. Propiedad del software
+
+Este software es propiedad exclusiva de su autor. Todos los derechos sobre el código fuente, diseño, lógica y documentación pertenecen al creador.
+
+2. Permisos de uso
+
+Se concede al usuario una licencia limitada, no exclusiva y revocable para:
+
+✔️ Usar el software de forma personal
+✔️ Ejecutarlo en sus propios dispositivos
+✔️ Modificar el código únicamente para uso personal y no comercial
+✔️ Estudiar su funcionamiento
+3. Restricciones estrictas
+
+Queda estrictamente prohibido:
+
+❌ Redistribuir este software total o parcialmente
+❌ Subirlo a GitHub, GitLab u otras plataformas públicas o privadas
+❌ Venderlo, revenderlo o comercializarlo de cualquier forma
+❌ Presentarlo como propio o reclamar autoría
+❌ Compartirlo con terceros sin autorización expresa del autor
+❌ Usarlo como base para crear productos derivados públicos o comerciales
+4. Violación de la licencia
+
+Cualquier incumplimiento de estas condiciones resultará en:
+
+Revocación inmediata del permiso de uso
+Posibles acciones legales según la legislación aplicable
+Responsabilidad por daños causados por el uso no autorizado
+5. Distribución autorizada
+
+Cualquier forma de redistribución, publicación o uso comercial requiere autorización explícita y por escrito del autor.
+
+6. Sin garantía
+
+Este software se proporciona “tal cual”, sin garantías de ningún tipo. El autor no se responsabiliza por pérdidas, fallos o daños derivados de su uso.
+
+7. Aceptación
+
+El uso de este software implica la aceptación total de esta licencia.
