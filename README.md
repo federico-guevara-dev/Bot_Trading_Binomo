@@ -18,4 +18,4 @@ python bot_trading.py
 
 📌 Nota
 
-Asegurate de tener Python instalado correctamente antes de ejecutar los comandos.
+Asegurate de tener Python instalado correctamente(con pip) antes de ejecutar los comandos.
