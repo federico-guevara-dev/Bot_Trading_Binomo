@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║   ALPHA BOT v2 — Binomo · Detección de Pantalla         ║
+║   ALPHA BOT v3 — Binomo · Detección de Pantalla         ║
 ║   RSI + MACD + EMA + Velas · OCR · PyAutoGUI            ║
 ║   Saldo OCR · Resultado OCR · Monto Autónomo            ║
 ╚══════════════════════════════════════════════════════════╝
@@ -293,6 +293,256 @@ def calcular_monto_autonomo(saldo, modo, pct_fijo=2.0, racha_wins=0, racha_losse
 # ════════════════════════════════════════════════════════
 #   BOT PRINCIPAL
 # ════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════
+#   SELECTOR VISUAL DE REGIÓN (tipo Recorte de Windows)
+# ════════════════════════════════════════════════════════
+class RegionSelector:
+    """
+    Abre una ventana semitransparente sobre toda la pantalla.
+    El usuario arrastra para seleccionar una región rectangular.
+    Al soltar devuelve (x, y, w, h) en coordenadas de pantalla.
+    
+    Uso:
+        sel = RegionSelector(callback=mi_funcion, label="Saldo")
+        # mi_funcion(x, y, w, h) se llama al confirmar
+    """
+
+    OVERLAY_ALPHA  = 0.35          # opacidad del fondo oscuro
+    BORDER_COLOR   = "#00d4ff"     # cyan neón para el borde
+    FILL_COLOR     = "#00d4ff"     # color del recuadro
+    FILL_ALPHA_HEX = "22"          # transparencia del relleno (hex)
+    FONT           = ("Segoe UI", 11)
+    FONT_BIG       = ("Segoe UI", 14, "bold")
+
+    def __init__(self, callback, label="región", preview_callback=None):
+        self.callback         = callback
+        self.label            = label
+        self.preview_callback = preview_callback
+        self.start_x = self.start_y = 0
+        self.cur_x   = self.cur_y   = 0
+        self.dragging = False
+        self.rect_id  = None
+        self.info_id  = None
+        self.dims_id  = None
+        self._build()
+
+    def _build(self):
+        # Capturar pantalla completa ANTES de crear la ventana
+        if PIL_OK:
+            self._screenshot = ImageGrab.grab()
+        else:
+            self._screenshot = None
+
+        # Ventana fullscreen sin bordes
+        self.win = tk.Toplevel()
+        self.win.title("")
+        self.win.overrideredirect(True)
+        self.win.attributes("-fullscreen", True)
+        self.win.attributes("-topmost", True)
+        self.win.configure(cursor="crosshair")
+
+        sw = self.win.winfo_screenwidth()
+        sh = self.win.winfo_screenheight()
+
+        # Canvas que cubre toda la pantalla
+        self.cv = tk.Canvas(self.win, width=sw, height=sh,
+                            highlightthickness=0, cursor="crosshair")
+        self.cv.pack(fill="both", expand=True)
+
+        # Fondo: screenshot + overlay oscuro
+        if self._screenshot and PIL_OK:
+            from PIL import ImageTk, ImageDraw
+            # Oscurecer screenshot
+            overlay = self._screenshot.copy().convert("RGBA")
+            dark = Image.new("RGBA", overlay.size, (0, 0, 0, int(255 * self.OVERLAY_ALPHA)))
+            overlay = Image.alpha_composite(overlay, dark).convert("RGB")
+            self._bg_img = ImageTk.PhotoImage(overlay)
+            self.cv.create_image(0, 0, anchor="nw", image=self._bg_img)
+        else:
+            self.cv.create_rectangle(0, 0, sw, sh, fill="#000000")
+            # Semitransparente si Pillow no está
+            self.win.attributes("-alpha", 0.75)
+
+        # Texto de instrucciones (centro superior)
+        cy = sh // 2
+        self.cv.create_rectangle(sw//2 - 340, 18, sw//2 + 340, 80,
+                                 fill="#071428", outline=self.BORDER_COLOR, width=2)
+        self.cv.create_text(sw//2, 36, fill=self.BORDER_COLOR,
+                            font=self.FONT_BIG,
+                            text=f"✂  Seleccionando: {self.label.upper()}")
+        self.cv.create_text(sw//2, 60, fill="#94a3b8",
+                            font=self.FONT,
+                            text="Arrastrá para marcar la región · ESC para cancelar · Enter para confirmar")
+
+        # Eventos
+        self.cv.bind("<ButtonPress-1>",   self._on_press)
+        self.cv.bind("<B1-Motion>",       self._on_drag)
+        self.cv.bind("<ButtonRelease-1>", self._on_release)
+        self.win.bind("<Escape>",         lambda e: self._cancel())
+        self.win.bind("<Return>",         lambda e: self._confirm())
+
+        self.win.focus_force()
+
+    # ── Dibujo ──────────────────────────────────────────
+    def _redraw(self):
+        if self.rect_id:  self.cv.delete(self.rect_id)
+        if self.info_id:  self.cv.delete(self.info_id)
+        if self.dims_id:  self.cv.delete(self.dims_id)
+
+        x1, y1 = min(self.start_x, self.cur_x), min(self.start_y, self.cur_y)
+        x2, y2 = max(self.start_x, self.cur_x), max(self.start_y, self.cur_y)
+        w = x2 - x1
+        h = y2 - y1
+
+        if w < 2 or h < 2:
+            return
+
+        # Rectángulo exterior (borde)
+        self.rect_id = self.cv.create_rectangle(
+            x1, y1, x2, y2,
+            outline=self.BORDER_COLOR, width=2,
+            fill=""
+        )
+
+        # Líneas de la cruz en las esquinas (estilo recorte Windows)
+        arm = 16
+        corner_col = "#ffffff"
+        for cx2, cy2, dx, dy in [(x1,y1,-1,-1),(x2,y1,1,-1),(x1,y2,-1,1),(x2,y2,1,1)]:
+            self.cv.create_line(cx2, cy2, cx2+dx*arm, cy2, fill=corner_col, width=2)
+            self.cv.create_line(cx2, cy2, cx2, cy2+dy*arm, fill=corner_col, width=2)
+
+        # Dimensiones encima del rectángulo
+        label_y = y1 - 22 if y1 > 30 else y2 + 8
+        bg_x1, bg_y1 = x1, label_y - 4
+        bg_x2, bg_y2 = x1 + 160, label_y + 18
+        self.cv.create_rectangle(bg_x1, bg_y1, bg_x2, bg_y2,
+                                 fill="#071428", outline=self.BORDER_COLOR, width=1)
+        self.dims_id = self.cv.create_text(
+            x1 + 8, label_y + 6,
+            text=f"{w} × {h}  px",
+            fill=self.BORDER_COLOR, font=("Courier", 10, "bold"), anchor="w"
+        )
+
+        # Coordenadas absolutas
+        info_y = y2 + 26 if y2 + 50 < self.win.winfo_screenheight() else y1 - 40
+        self.info_id = self.cv.create_text(
+            x1, info_y,
+            text=f"x:{x1}  y:{y1}  w:{w}  h:{h}",
+            fill="#94a3b8", font=("Courier", 9), anchor="w"
+        )
+
+    # ── Eventos ─────────────────────────────────────────
+    def _on_press(self, e):
+        self.start_x, self.start_y = e.x, e.y
+        self.cur_x,   self.cur_y   = e.x, e.y
+        self.dragging = True
+
+    def _on_drag(self, e):
+        self.cur_x, self.cur_y = e.x, e.y
+        self._redraw()
+
+    def _on_release(self, e):
+        self.cur_x, self.cur_y = e.x, e.y
+        self.dragging = False
+        self._redraw()
+        # Mostrar botones de confirmar / rehacer
+        self._show_action_buttons()
+
+    def _show_action_buttons(self):
+        """Muestra botones Confirmar y Rehacer después de soltar el mouse."""
+        x1 = min(self.start_x, self.cur_x)
+        x2 = max(self.start_x, self.cur_x)
+        y2 = max(self.start_y, self.cur_y)
+        bw = self.win.winfo_screenwidth()
+        bh = self.win.winfo_screenheight()
+
+        # Posición de los botones: debajo del rectángulo o arriba si no hay espacio
+        by = y2 + 36 if y2 + 80 < bh else min(self.start_y, self.cur_y) - 56
+        bx = min(x2 + 10, bw - 320)
+
+        # Fondo de botones
+        self.cv.create_rectangle(bx - 8, by - 8, bx + 310, by + 42,
+                                 fill="#071428", outline=self.BORDER_COLOR, width=1)
+
+        # Botón Confirmar
+        btn_ok = tk.Button(self.win,
+                           text="✔  CONFIRMAR",
+                           bg="#22c55e", fg="#fff",
+                           font=("Segoe UI", 10, "bold"),
+                           relief="flat", padx=14, pady=6,
+                           cursor="hand2",
+                           command=self._confirm)
+        btn_ok.place(x=bx, y=by)
+
+        # Botón Rehacer
+        btn_re = tk.Button(self.win,
+                           text="↺  REHACER",
+                           bg="#0ea5e9", fg="#fff",
+                           font=("Segoe UI", 10, "bold"),
+                           relief="flat", padx=14, pady=6,
+                           cursor="hand2",
+                           command=self._restart)
+        btn_re.place(x=bx + 164, y=by)
+
+        # Preview OCR en tiempo real si hay callback
+        if self.preview_callback and PIL_OK:
+            threading.Thread(target=self._run_preview, daemon=True).start()
+
+    def _run_preview(self):
+        """Llama al callback de preview con la región seleccionada."""
+        x1 = min(self.start_x, self.cur_x)
+        y1 = min(self.start_y, self.cur_y)
+        w  = abs(self.cur_x - self.start_x)
+        h  = abs(self.cur_y - self.start_y)
+        if w > 4 and h > 4:
+            try:
+                self.preview_callback(x1, y1, w, h)
+            except Exception:
+                pass
+
+    # ── Acciones ────────────────────────────────────────
+    def _confirm(self):
+        x1 = min(self.start_x, self.cur_x)
+        y1 = min(self.start_y, self.cur_y)
+        w  = abs(self.cur_x - self.start_x)
+        h  = abs(self.cur_y - self.start_y)
+        self.win.destroy()
+        if w > 4 and h > 4 and self.callback:
+            self.callback(x1, y1, w, h)
+
+    def _restart(self):
+        """Limpia la selección para que el usuario vuelva a arrastrar."""
+        self.start_x = self.start_y = 0
+        self.cur_x   = self.cur_y   = 0
+        if self.rect_id: self.cv.delete(self.rect_id)
+        if self.info_id: self.cv.delete(self.info_id)
+        if self.dims_id: self.cv.delete(self.dims_id)
+        # Destruir botones
+        for w in self.win.winfo_children():
+            if isinstance(w, tk.Button):
+                w.destroy()
+
+    def _cancel(self):
+        self.win.destroy()
+
+
+def abrir_selector(x_var, y_var, w_var, h_var, label,
+                   on_confirm=None, preview_cb=None):
+    """
+    Función helper: oculta la ventana principal, abre el selector,
+    y al confirmar guarda las variables y llama on_confirm.
+    """
+    def callback(x, y, w, h):
+        x_var.set(x)
+        y_var.set(y)
+        w_var.set(w)
+        h_var.set(h)
+        if on_confirm:
+            on_confirm(x, y, w, h)
+
+    RegionSelector(callback=callback, label=label, preview_callback=preview_cb)
+
+
 class BinomoBot:
     def __init__(self, root):
         self.root = root
@@ -724,11 +974,11 @@ class BinomoBot:
             tk.Entry(r, textvariable=yv, font=("Courier", 9), bg="#0a1628",
                      fg=C["text"], relief="flat", bd=4, width=6,
                      insertbackground=C["text"]).pack(side="left", padx=2)
-        tk.Button(cf2, text="📍 Detectar posición SUBIR (5s)",
+        tk.Button(cf2, text="✂  Clic sobre botón SUBIR en Binomo",
                   command=lambda: self._detectar("subir"),
                   bg="#0a1628", fg=C["green"], font=("Courier", 8),
                   relief="flat", cursor="hand2", pady=4).pack(fill="x", padx=10, pady=3)
-        tk.Button(cf2, text="📍 Detectar posición BAJAR (5s)",
+        tk.Button(cf2, text="✂  Clic sobre botón BAJAR en Binomo",
                   command=lambda: self._detectar("bajar"),
                   bg="#0a1628", fg=C["red"], font=("Courier", 8),
                   relief="flat", cursor="hand2", pady=4).pack(fill="x", padx=10, pady=(0,8))
@@ -779,8 +1029,8 @@ class BinomoBot:
         tk.Button(r2, text="📸 Test OCR precio", command=self._test_ocr,
                   bg=C["blue"], fg="#fff", font=("Courier", 8), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True, padx=(0,4))
-        tk.Button(r2, text="🎯 Detectar región", command=self._detectar_region_ocr,
-                  bg="#0a1628", fg=C["blue"], font=("Courier", 8), relief="flat",
+        tk.Button(r2, text="✂  Seleccionar región en pantalla", command=self._detectar_region_ocr,
+                  bg="#0c2a40", fg=C["blue"], font=("Courier", 8, "bold"), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True)
 
         # ── OCR SALDO ──
@@ -809,7 +1059,7 @@ class BinomoBot:
         tk.Button(r3, text="📸 Test OCR saldo", command=self._test_ocr_saldo,
                   bg=C["gold"], fg="#000", font=("Courier", 8), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True, padx=(0,4))
-        tk.Button(r3, text="🎯 Detectar región saldo", command=self._detectar_region_saldo,
+        tk.Button(r3, text="✂  Seleccionar saldo en pantalla", command=self._detectar_region_saldo,
                   bg="#0a1628", fg=C["gold"], font=("Courier", 8), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True)
 
@@ -839,7 +1089,7 @@ class BinomoBot:
         tk.Button(r4, text="📸 Test OCR resultado", command=self._test_ocr_resultado,
                   bg=C["purple"], fg="#fff", font=("Courier", 8), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True, padx=(0,4))
-        tk.Button(r4, text="🎯 Detectar región resultado", command=self._detectar_region_resultado,
+        tk.Button(r4, text="✂  Seleccionar resultado en pantalla", command=self._detectar_region_resultado,
                   bg="#0a1628", fg=C["purple"], font=("Courier", 8), relief="flat",
                   cursor="hand2", pady=4).pack(side="left", fill="x", expand=True)
 
@@ -1040,32 +1290,52 @@ class BinomoBot:
             self._log(f"✅ {btn} → ({x}, {y}) guardado", "s")
         threading.Thread(target=_run, daemon=True).start()
 
-    def _detectar_region_genérica(self, setter_x, setter_y, setter_w, setter_h, nombre):
-        def _run():
-            if not PYAUTOGUI_OK:
-                self._log("PyAutoGUI no instalado", "e"); return
-            self._log(f"Mové a esquina superior-izq de [{nombre}] (5s)...", "w")
-            time.sleep(5); x1, y1 = pyautogui.position()
-            self._log(f"Punto 1: ({x1},{y1}). Ahora a esquina inf-der (5s)...", "w")
-            time.sleep(5); x2, y2 = pyautogui.position()
-            w = abs(x2 - x1); h = abs(y2 - y1)
-            self.root.after(0, lambda: setter_x.set(min(x1,x2)))
-            self.root.after(0, lambda: setter_y.set(min(y1,y2)))
-            self.root.after(0, lambda: setter_w.set(max(w,20)))
-            self.root.after(0, lambda: setter_h.set(max(h,10)))
-            self._log(f"✅ [{nombre}]: x={min(x1,x2)} y={min(y1,y2)} w={w} h={h}", "s")
-        threading.Thread(target=_run, daemon=True).start()
+    # ── Selector visual (tipo Recorte de Windows) ──────
+    def _abrir_selector_visual(self, x_var, y_var, w_var, h_var, label, on_done=None):
+        """Oculta el bot, abre el selector de pantalla completa, restaura al confirmar."""
+        def on_confirm(x, y, w, h):
+            x_var.set(x); y_var.set(y)
+            w_var.set(w); h_var.set(h)
+            self._log(f"✅ [{label}] seleccionado: x={x} y={y} w={w} h={h}", "s")
+            # Mostrar preview OCR inmediato
+            if on_done:
+                self.root.after(300, on_done)
+
+        def preview_cb(x, y, w, h):
+            """Preview OCR en tiempo real mientras el usuario confirma."""
+            val = ocr_read_number(x, y, w, h)
+            if val:
+                self._log(f"👁 Preview OCR [{label}]: {val}", "i")
+
+        # Ocultar ventana principal momentáneamente para captura limpia
+        self.root.withdraw()
+        self.root.after(180, lambda: _do_open())
+
+        def _do_open():
+            RegionSelector(callback=on_confirm, label=label, preview_callback=preview_cb)
+            # Restaurar ventana principal cuando el selector se cierre
+            self.root.after(400, self.root.deiconify)
 
     def _detectar_region_ocr(self):
-        self._detectar_region_genérica(self.ocr_x, self.ocr_y, self.ocr_w, self.ocr_h, "Precio OCR")
+        self._abrir_selector_visual(
+            self.ocr_x, self.ocr_y, self.ocr_w, self.ocr_h,
+            "Precio en gráfico",
+            on_done=self._test_ocr
+        )
 
     def _detectar_region_saldo(self):
-        self._detectar_region_genérica(self.saldo_ocr_x, self.saldo_ocr_y,
-                                       self.saldo_ocr_w, self.saldo_ocr_h, "Saldo OCR")
+        self._abrir_selector_visual(
+            self.saldo_ocr_x, self.saldo_ocr_y, self.saldo_ocr_w, self.saldo_ocr_h,
+            "Saldo de cuenta",
+            on_done=self._test_ocr_saldo
+        )
 
     def _detectar_region_resultado(self):
-        self._detectar_region_genérica(self.res_ocr_x, self.res_ocr_y,
-                                       self.res_ocr_w, self.res_ocr_h, "Resultado OCR")
+        self._abrir_selector_visual(
+            self.res_ocr_x, self.res_ocr_y, self.res_ocr_w, self.res_ocr_h,
+            "Resultado de operación",
+            on_done=self._test_ocr_resultado
+        )
 
     def _test_ocr(self):
         def _run():
@@ -1476,3 +1746,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app  = BinomoBot(root)
     root.mainloop()
+
