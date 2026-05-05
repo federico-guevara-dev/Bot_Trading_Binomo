@@ -1,63 +1,22 @@
-# 🤖 Alpha Bot v1 — Binomo Trading Bot
+# 🤖 Alpha Bot v2 — Binomo Auto-Detection
 
-Alpha Bot es un sistema de trading automatizado diseñado para operar en la plataforma Binomo. A diferencia de otros bots, este utiliza **Visión Computacional (OCR)** para leer directamente el gráfico y los datos de la pantalla, permitiendo un análisis técnico avanzado en tiempo real.
+Alpha Bot v2 es una evolución significativa del sistema original, diseñada para ser más autónoma y precisa. Esta versión introduce la capacidad de **detectar automáticamente la pantalla de trading** y procesar múltiples indicadores simultáneamente.
 
-## ✨ Características principales
-* **Visión Artificial**: Procesa el precio, saldo y gráficos directamente desde la pantalla.
-* **Análisis Técnico**: Soporta 11 indicadores (RSI, MACD, Bandas de Bollinger, Estocástico, Parabolic SAR, ATR, ADX, etc.).
-* **Visualización Avanzada**: Gráficos internos con soporte para velas **Heikin Ashi**.
-* **Configuración Inteligente**: Archivo `alphabot_config.json` para ajustar coordenadas de pantalla y parámetros de trading.
-* **Sistema de Resiliencia**: Detección de recargas de página (F5) y reconexión automática.
+## 🌟 Novedades de la v2
+* **Auto-Detección**: El bot identifica la resolución y la ventana de mercado automáticamente.
+* **OCR Mejorado**: Lectura en tiempo real de saldo, precio y resultados de operación.
+* **Lógica Multidato**: Combina RSI, MACD, EMA y Velas para decisiones más seguras.
+* **Gestión de Monto**: Soporta estrategias de monto fijo y ajustes basados en el saldo actual.
+
+## 🛠 Requisitos técnicos
+* **Python 3.10+**
+* **Tesseract OCR** (Instalado en el sistema y añadido al PATH).
+* **Librerías**: PyAutoGUI, OpenCV, Pillow, PyTesseract, Numpy.
+
+## 🚀 Cómo empezar
+1.  Descarga los archivos de la versión **v2**.
+2.  Asegúrate de tener la plataforma Binomo abierta en tu navegador principal.
+3.  Ejecuta el archivo `INICIAR_BOT.bat`. El script verificará tus dependencias y lanzará el bot automáticamente.
 
 ---
-
-## ⚠️ Advertencia de Riesgo
-**El trading de opciones binarias conlleva un riesgo significativo.** Este bot es una herramienta de automatización y no garantiza beneficios. Úsalo bajo tu propia responsabilidad. Se recomienda probarlo siempre en una **cuenta demo** antes de pasar a real.
-
----
-
-## 📋 Requisitos Previos
-
-Para que el bot funcione, necesitas tener instalados los siguientes componentes:
-
-1.  **Python 3.10+** (Asegúrate de marcar "Add Python to PATH").
-2.  **Tesseract OCR**: 
-    * Descárgalo desde [aquí](https://github.com/UB-Mannheim/tesseract/wiki).
-    * Instálalo en la ruta por defecto: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
-
-## 🚀 Instalación y Uso
-
-### Paso 1 — Descargar el proyecto
-Descarga todos los archivos del repositorio y colócalos en una misma carpeta.
-
-### Paso 2 — Instalar dependencias
-Abre una terminal (CMD o PowerShell) en la carpeta del proyecto y ejecuta:
-```bash
-python instalar.py
-
-Si no tienes instalar.py, puedes instalar las librerías manualmente:
-
-pip install pyautogui pillow pytesseract opencv-python yfinance numpy
-```
-
-Ejecución
-Tienes dos formas de iniciar el bot:
-
-Opción A (Recomendada): Haz doble clic en el archivo INICIAR_BOT.bat. Este archivo configura automáticamente el entorno.
-
-Opción B (Manual): Ejecuta en la terminal:
-
-```
-python bot_trading.py
-```
-
-⚙️ Configuración
-El bot se basa en el archivo alphabot_config.json. En él podrás:
-
-Configurar las coordenadas x, y de los botones de "Subir" y "Bajar".
-
-Activar o desactivar indicadores específicos.
-
-Ajustar las áreas de la pantalla donde el OCR debe leer el precio y el saldo.
-
-Nota: Asegúrate de que la ventana de trading esté visible y que las coordenadas en el archivo de configuración coincidan con tu resolución de pantalla.
+*Nota: Esta versión v2 está optimizada para estabilidad. Se recomienda probar la detección de pantalla en diferentes navegadores para asegurar la mejor lectura de datos.*
