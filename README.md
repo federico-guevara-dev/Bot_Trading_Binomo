@@ -1,54 +1,40 @@
-# 🤖 Alpha Bot v3 — Advanced Vision Trading System
+# 🤖 Alpha Bot v4 — Professional Vision Trading System
 
-**Alpha Bot** es una plataforma de trading automatizado de grado avanzado para Binomo. A diferencia de las versiones anteriores, este sistema utiliza **Inteligencia Visual (OCR)** y **Visión Artificial** para interactuar con el mercado de forma humana, analizando datos directamente de la pantalla en tiempo real.
+**Alpha Bot v4** es un ecosistema de trading algorítmico de alto rendimiento. A diferencia de otros bots, este sistema utiliza **Inteligencia Visual** para "leer" la plataforma de trading como lo haría un humano, eliminando la necesidad de APIs externas y permitiendo una ejecución precisa basada en lo que sucede en pantalla en tiempo real.
 
-## 🌟 Características Destacadas
-* **Visión Computacional (OCR)**: Lectura automática de saldo, precio actual y resultados de operaciones mediante `Tesseract OCR` y `OpenCV`.
-* **Gestión de Capital Inteligente**: Algoritmos profesionales integrados:
-    * **Fracción de Kelly**: Optimización de inversión según probabilidad.
-    * **Martingala & Anti-Martingala**: Sistemas de progresión configurables.
-    * **Interés Fijo**: Para un control de riesgo conservador.
-* **Análisis Técnico Pro**: Motor que combina RSI, MACD, Medias Móviles (EMA), Bandas de Bollinger y patrones de velas (Martillo, Estrella Fugaz, etc.).
-* **Selector de Región Dinámico**: Herramienta visual para definir áreas de lectura (saldo, precio, botones), garantizando compatibilidad con cualquier resolución de monitor.
-* **Dashboard en Tiempo Real**: Interfaz gráfica (GUI) con historial de operaciones, visualización de indicadores y estado del bot.
+## 🚀 Innovaciones de la v4
+* **Gestión de Monto Autónoma**: El bot ahora decide cuánto invertir basándose en el **Criterio de Kelly**, Martingala inteligente o gestión de interés fijo.
+* **Lectura Dinámica de Saldo**: Integración total con `Tesseract OCR` para actualizar el capital disponible y los resultados de cada operación automáticamente.
+* **Análisis Técnico de 360°**: 
+    * **Indicadores**: RSI, MACD, Medias Móviles (EMA 10/26) y Bandas de Bollinger.
+    * **Acción del Precio**: Detección de patrones de velas (Martillo, Estrella Fugaz, etc.).
+    * **Filtro de Noticias**: Simulación de impacto fundamental para evitar mercados volátiles.
+* **Interfaz Gráfica Pro**: GUI desarrollada en `Tkinter` con gráficos en tiempo real, historial de operaciones y selector de regiones manual para máxima compatibilidad.
 
----
-
-## ⚠️ Advertencia de Riesgo
-**El trading de opciones binarias conlleva un alto riesgo de pérdida de capital.** Alpha Bot es una herramienta tecnológica de asistencia y no garantiza beneficios económicos. Se recomienda estrictamente probar el sistema en **Cuenta Demo** para calibrar el OCR y la estrategia antes de operar con fondos reales.
-
----
-
-## 📋 Requisitos del Sistema
-1.  **Python 3.10+** (Añadido al PATH).
-2.  **Tesseract OCR**: 
-    * Instalar en: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
-    * [Descargar aquí](https://github.com/UB-Mannheim/tesseract/wiki).
-3.  **Librerías necesarias**:
+## 📋 Requisitos Previos
+1.  **Python 3.10+** (Instalado con la opción "Add to PATH").
+2.  **Tesseract OCR**: Motor de reconocimiento de texto esencial para la lectura de precios y saldo.
+3.  **Librerías principales**: 
     ```bash
     pip install pyautogui pillow pytesseract opencv-python yfinance numpy
     ```
 
-## 🚀 Instalación y Uso rápido
+## ⚡ Guía de Inicio
+1.  **Configura Binomo**: Abre la plataforma en tu navegador y asegúrate de que el gráfico sea visible.
+2.  **Ejecuta el Bot**: Inicia `INICIAR_BOT.bat` o `python bot_trading_v4.py`.
+3.  **Calibra el Visor**: Utiliza el selector integrado para marcar las áreas de:
+    * 💰 Saldo de la cuenta.
+    * 📈 Precio del activo.
+    * 🔴/🟢 Botones de operación.
+4.  **Operación**: Ajusta tu estrategia de riesgo en el panel y presiona "Iniciar".
 
-### Paso 1 — Configuración
-Asegúrate de que tu plataforma de trading esté abierta en Chrome y que el gráfico sea claramente visible.
-
-### Paso 2 — Ejecución
-Puedes iniciar el sistema de dos maneras:
-* **Opción A**: Doble clic en `INICIAR_BOT.bat` (Verifica dependencias automáticamente).
-* **Opción B**: Ejecutar `python bot_trading.py` desde la terminal.
-
-### Paso 3 — Calibración OCR
-Al iniciar, utiliza el **Selector de Regiones** para marcar en tu pantalla:
-1.  El área donde aparece el saldo.
-2.  El área donde se muestra el precio actual.
-3.  La ubicación de los botones de "Subir" y "Bajar".
+## ⚙️ Arquitectura del Sistema
+El bot se autogestiona mediante un archivo `alphabot_config.json`, permitiendo que tus coordenadas y configuraciones de indicadores se guarden para la siguiente sesión, optimizando el tiempo de arranque.
 
 ---
 
-## ⚙️ Configuración Personalizada
-El archivo `alphabot_config.json` guarda tus coordenadas y preferencias de indicadores automáticamente para que no tengas que configurar el bot en cada inicio.
+## ⚠️ Descargo de Responsabilidad
+**El trading de opciones binarias implica un riesgo significativo de pérdida.** Alpha Bot v4 es un software de automatización creado con fines educativos. Se recomienda encarecidamente utilizarlo en **Cuentas Demo** para validar la estrategia. El desarrollador no se hace responsable por pérdidas financieras derivadas del uso de esta herramienta.
 
 ---
-*Desarrollado para la comunidad de trading algorítmico y automatización con Python.*
+*Desarrollado con Python y Visión Artificial para la nueva generación de traders algorítmicos.*
