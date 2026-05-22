@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║   ALPHA BOT v5 — Binomo · IA Avanzada · Heikin Ashi            ║
+║   ALPHA BOT v6 — Binomo · IA Avanzada · Heikin Ashi            ║
 ║   9 Indicadores OCR · Monto autónomo · Escritura de monto      ║
 ║   RSI·MACD·BB·Stochastic·ParSAR·ATR·ADX·CCI·AO·Momentum       ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -11,7 +11,7 @@ Tesseract: https://github.com/UB-Mannheim/tesseract/wiki
 
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
-import threading, time, random, math, os, re, json
+import threading, time, random, math, os, re, json, ctypes
 from datetime import datetime
 from collections import deque
 
@@ -416,118 +416,182 @@ def calcular_monto(saldo,modo,pct=2.0,rw=0,rl=0):
     return int(max(MONTO_MIN,min(MONTO_MAX,round(m/100)*100)))
 
 # ══════════════════════════════════════════════════════════
-#   SELECTOR VISUAL (tipo Recorte de Windows)
+#   SELECTOR VISUAL (multi-monitor, modo punto y región)
 # ══════════════════════════════════════════════════════════
-class RegionSelector:
-    BC="#00d4ff"
-    def __init__(self,callback,label="región",preview_cb=None):
-        self.cb=callback; self.label=label; self.pcb=preview_cb
-        self.sx=self.sy=self.cx=self.cy=0
-        self.rid=self.iid=self.did=None
-        self._build()
+def get_virtual_screen_geometry():
+    """
+    Devuelve la geometría del escritorio virtual.
+    Útil para capturar y anotar pantalla completa incluso con varios monitores.
+    """
+    try:
+        user32 = ctypes.windll.user32
+        x = user32.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
+        y = user32.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
+        w = user32.GetSystemMetrics(78)   # SM_CXVIRTUALSCREEN
+        h = user32.GetSystemMetrics(79)   # SM_CYVIRTUALSCREEN
+        if w > 0 and h > 0:
+            return x, y, w, h
+    except Exception:
+        pass
+    return 0, 0, 0, 0
 
-    def _build(self):
-        self._ss=ImageGrab.grab() if PIL_OK else None
-        self.win=tk.Toplevel()
-        self.win.title("")
-        self.win.overrideredirect(True)
-        self.win.attributes("-fullscreen",True)
-        self.win.attributes("-topmost",True)
-        self.win.configure(cursor="crosshair")
-        sw=self.win.winfo_screenwidth()
-        sh=self.win.winfo_screenheight()
-        self.cv=tk.Canvas(self.win,width=sw,height=sh,
-                          highlightthickness=0,cursor="crosshair")
-        self.cv.pack(fill="both",expand=True)
-        if self._ss and PIL_OK:
-            from PIL import ImageDraw
-            ov=self._ss.copy().convert("RGBA")
-            dk=Image.new("RGBA",ov.size,(0,0,0,100))
-            ov=Image.alpha_composite(ov,dk).convert("RGB")
-            self._bgi=ImageTk.PhotoImage(ov)
-            self.cv.create_image(0,0,anchor="nw",image=self._bgi)
+class ScreenSelectionOverlay(tk.Toplevel):
+    """
+    Selector visual de pantalla estilo recorte.
+    - mode="region": arrastrar para elegir un rectángulo.
+    - mode="point": click para elegir un punto exacto.
+    """
+    def __init__(self, master, title, mode, on_complete, on_cancel=None,
+                 min_width=20, min_height=10):
+        super().__init__(master)
+        self.mode = mode
+        self.on_complete = on_complete
+        self.on_cancel = on_cancel
+        self.min_width = min_width
+        self.min_height = min_height
+        self.start_x = None
+        self.start_y = None
+        self.rect_id = None
+        self.cross_v = None
+        self.cross_h = None
+        self.info_bg = None
+        self.info_text = None
+
+        vx, vy, vw, vh = get_virtual_screen_geometry()
+        if vw <= 0 or vh <= 0:
+            vw = master.winfo_screenwidth()
+            vh = master.winfo_screenheight()
+            vx = 0
+            vy = 0
+        self.virtual_x = vx
+        self.virtual_y = vy
+        self.virtual_w = vw
+        self.virtual_h = vh
+
+        self.title(title)
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.geometry(f"{vw}x{vh}+{vx}+{vy}")
+        self.configure(bg="black")
+
+        capture_bbox = (vx, vy, vx + vw, vy + vh)
+        self.screenshot = ImageGrab.grab(bbox=capture_bbox)
+        shaded = self.screenshot.convert("RGBA")
+        shaded = ImageEnhance.Brightness(shaded).enhance(0.65)
+        self.tk_bg = ImageTk.PhotoImage(shaded)
+
+        self.canvas = tk.Canvas(self, width=vw, height=vh, highlightthickness=0,
+                                bd=0, cursor="crosshair", bg="black")
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.create_image(0, 0, anchor="nw", image=self.tk_bg)
+
+        help_text = (
+            f"{title}  |  "
+            + ("Arrastrá para seleccionar la región." if mode == "region" else "Hacé click para elegir el punto.")
+            + "  |  ESC o clic derecho para cancelar"
+        )
+        self.info_bg = self.canvas.create_rectangle(14, 14, 700, 44,
+                                                    fill="#03101d", outline="#0ea5e9", width=1)
+        self.info_text = self.canvas.create_text(
+            24, 29, anchor="w", text=help_text,
+            fill="#e2e8f0", font=("Segoe UI", 10, "bold")
+        )
+
+        self.bind("<Escape>", self._cancel)
+        self.canvas.bind("<Button-3>", self._cancel)
+        self.canvas.bind("<Motion>", self._on_motion)
+
+        if mode == "region":
+            self.canvas.bind("<ButtonPress-1>", self._on_press_region)
+            self.canvas.bind("<B1-Motion>", self._on_drag_region)
+            self.canvas.bind("<ButtonRelease-1>", self._on_release_region)
         else:
-            self.cv.create_rectangle(0,0,sw,sh,fill="#000000")
-            self.win.attributes("-alpha",0.7)
-        # Instrucciones
-        self.cv.create_rectangle(sw//2-360,14,sw//2+360,78,
-                                 fill="#071428",outline=self.BC,width=2)
-        self.cv.create_text(sw//2,34,fill=self.BC,
-                            font=("Segoe UI",14,"bold"),
-                            text=f"✂  Seleccionando: {self.label.upper()}")
-        self.cv.create_text(sw//2,58,fill="#94a3b8",
-                            font=("Segoe UI",11),
-                            text="Arrastrá para marcar · ESC=cancelar · Enter=confirmar")
-        self.cv.bind("<ButtonPress-1>",self._press)
-        self.cv.bind("<B1-Motion>",self._drag)
-        self.cv.bind("<ButtonRelease-1>",self._release)
-        self.win.bind("<Escape>",lambda e:self.win.destroy())
-        self.win.bind("<Return>",lambda e:self._confirm())
-        self.win.focus_force()
+            self.canvas.bind("<ButtonPress-1>", self._on_click_point)
 
-    def _redraw(self):
-        for id_ in [self.rid,self.iid,self.did]:
-            if id_: self.cv.delete(id_)
-        x1,y1=min(self.sx,self.cx),min(self.sy,self.cy)
-        x2,y2=max(self.sx,self.cx),max(self.sy,self.cy)
-        w,h=x2-x1,y2-y1
-        if w<2 or h<2: return
-        self.rid=self.cv.create_rectangle(x1,y1,x2,y2,
-                                          outline=self.BC,width=2,fill="")
-        arm=16;cc="#ffffff"
-        for cx_,cy_,dx,dy in [(x1,y1,-1,-1),(x2,y1,1,-1),(x1,y2,-1,1),(x2,y2,1,1)]:
-            self.cv.create_line(cx_,cy_,cx_+dx*arm,cy_,fill=cc,width=2)
-            self.cv.create_line(cx_,cy_,cx_,cy_+dy*arm,fill=cc,width=2)
-        ly=y1-22 if y1>30 else y2+8
-        self.cv.create_rectangle(x1,ly-4,x1+170,ly+18,fill="#071428",outline=self.BC,width=1)
-        self.did=self.cv.create_text(x1+8,ly+6,
-                                     text=f"{w} × {h}  px  ({x1},{y1})",
-                                     fill=self.BC,font=("Courier",10,"bold"),anchor="w")
-        iy=y2+26 if y2+50<self.win.winfo_screenheight() else y1-40
-        self.iid=self.cv.create_text(x1,iy,
-                                     text=f"x:{x1}  y:{y1}  w:{w}  h:{h}",
-                                     fill="#94a3b8",font=("Courier",9),anchor="w")
+        self.focus_force()
 
-    def _press(self,e): self.sx,self.sy=e.x,e.y; self.cx,self.cy=e.x,e.y
-    def _drag(self,e):  self.cx,self.cy=e.x,e.y; self._redraw()
-    def _release(self,e):
-        self.cx,self.cy=e.x,e.y; self._redraw()
-        bh=self.win.winfo_screenheight()
-        bw=self.win.winfo_screenwidth()
-        y2=max(self.sy,self.cy)
-        x2=max(self.sx,self.cx)
-        by=y2+36 if y2+80<bh else min(self.sy,self.cy)-56
-        bx=min(x2+10,bw-320)
-        self.cv.create_rectangle(bx-8,by-8,bx+310,by+42,
-                                 fill="#071428",outline=self.BC,width=1)
-        tk.Button(self.win,text="✔  CONFIRMAR",bg="#22c55e",fg="#fff",
-                  font=("Segoe UI",10,"bold"),relief="flat",padx=14,pady=6,
-                  cursor="hand2",command=self._confirm).place(x=bx,y=by)
-        tk.Button(self.win,text="↺  REHACER",bg="#0ea5e9",fg="#fff",
-                  font=("Segoe UI",10,"bold"),relief="flat",padx=14,pady=6,
-                  cursor="hand2",command=self._restart).place(x=bx+164,y=by)
-        if self.pcb and PIL_OK:
-            threading.Thread(target=self._preview,daemon=True).start()
+    def _cancel(self, event=None):
+        if callable(self.on_cancel):
+            self.on_cancel()
+        self.destroy()
 
-    def _preview(self):
-        x1,y1=min(self.sx,self.cx),min(self.sy,self.cy)
-        w,h=abs(self.cx-self.sx),abs(self.cy-self.sy)
-        if w>4 and h>4:
-            try: self.pcb(x1,y1,w,h)
-            except: pass
+    def _update_crosshair(self, x, y):
+        if self.cross_v is None:
+            self.cross_v = self.canvas.create_line(x, 0, x, self.virtual_h, fill="#38bdf8", dash=(4, 4))
+            self.cross_h = self.canvas.create_line(0, y, self.virtual_w, y, fill="#38bdf8", dash=(4, 4))
+        else:
+            self.canvas.coords(self.cross_v, x, 0, x, self.virtual_h)
+            self.canvas.coords(self.cross_h, 0, y, self.virtual_w, y)
 
-    def _confirm(self):
-        x1,y1=min(self.sx,self.cx),min(self.sy,self.cy)
-        w,h=abs(self.cx-self.sx),abs(self.cy-self.sy)
-        self.win.destroy()
-        if w>4 and h>4: self.cb(x1,y1,w,h)
+    def _set_info(self, text):
+        self.canvas.itemconfigure(self.info_text, text=text)
+        bbox = self.canvas.bbox(self.info_text)
+        if bbox:
+            x1, y1, x2, y2 = bbox
+            self.canvas.coords(self.info_bg, x1 - 10, y1 - 6, x2 + 10, y2 + 6)
 
-    def _restart(self):
-        self.sx=self.sy=self.cx=self.cy=0
-        for id_ in [self.rid,self.iid,self.did]:
-            if id_: self.cv.delete(id_)
-        for w in self.win.winfo_children():
-            if isinstance(w,tk.Button): w.destroy()
+    def _on_motion(self, event):
+        x = max(0, min(event.x, self.virtual_w))
+        y = max(0, min(event.y, self.virtual_h))
+        self._update_crosshair(x, y)
+        if self.mode == "point":
+            sx = self.virtual_x + x
+            sy = self.virtual_y + y
+            self._set_info(f"Seleccionar punto  |  X: {sx}  Y: {sy}  |  click para confirmar")
+
+    def _on_press_region(self, event):
+        self.start_x = max(0, min(event.x, self.virtual_w))
+        self.start_y = max(0, min(event.y, self.virtual_h))
+        if self.rect_id is not None:
+            self.canvas.delete(self.rect_id)
+        self.rect_id = self.canvas.create_rectangle(
+            self.start_x, self.start_y, self.start_x, self.start_y,
+            outline="#22c55e", width=2, dash=(6, 4), fill="#22c55e", stipple="gray25"
+        )
+
+    def _on_drag_region(self, event):
+        if self.rect_id is None:
+            return
+        x = max(0, min(event.x, self.virtual_w))
+        y = max(0, min(event.y, self.virtual_h))
+        self._update_crosshair(x, y)
+        self.canvas.coords(self.rect_id, self.start_x, self.start_y, x, y)
+        left = min(self.start_x, x)
+        top = min(self.start_y, y)
+        width = abs(x - self.start_x)
+        height = abs(y - self.start_y)
+        self._set_info(
+            f"Seleccionar región  |  X: {self.virtual_x + left}  Y: {self.virtual_y + top}  "
+            f"W: {width}  H: {height}"
+        )
+
+    def _on_release_region(self, event):
+        if self.rect_id is None:
+            return
+        end_x = max(0, min(event.x, self.virtual_w))
+        end_y = max(0, min(event.y, self.virtual_h))
+        left = min(self.start_x, end_x)
+        top = min(self.start_y, end_y)
+        width = abs(end_x - self.start_x)
+        height = abs(end_y - self.start_y)
+
+        if width < self.min_width or height < self.min_height:
+            self._set_info(
+                f"Región demasiado pequeña  |  mínimo {self.min_width}x{self.min_height} px  |  intentá otra vez"
+            )
+            return
+
+        if callable(self.on_complete):
+            self.on_complete(self.virtual_x + left, self.virtual_y + top, width, height)
+        self.destroy()
+
+    def _on_click_point(self, event):
+        x = max(0, min(event.x, self.virtual_w))
+        y = max(0, min(event.y, self.virtual_h))
+        if callable(self.on_complete):
+            self.on_complete(self.virtual_x + x, self.virtual_y + y)
+        self.destroy()
+
 
 # ══════════════════════════════════════════════════════════
 #   BOT PRINCIPAL
@@ -535,7 +599,7 @@ class RegionSelector:
 class BinomoBot:
     def __init__(self,root):
         self.root=root
-        self.root.title("⚡ ALPHA BOT v6 — Binomo · IA Avanzada · Heikin Ashi")
+        self.root.title("⚡ ALPHA BOT v7 — Binomo · IA Avanzada · Multi-Monitor · Heikin Ashi")
         self.root.configure(bg=C["bg"])
         self.root.geometry("1280x820")
         self.root.minsize(1100,720)
@@ -551,6 +615,7 @@ class BinomoBot:
         self.cooldown_end=0
         self.ultimo_saldo_ocr=None; self.ultimo_resultado_ocr=None
         self.ultimo_precio_ocr=None
+        self.selector_overlay=None
         self.racha_w=0; self.racha_l=0
         self.ops_hoy=0; self.saldo_ref=0.0
 
@@ -623,7 +688,7 @@ class BinomoBot:
 
         self._init_prices()
         self._build_ui()
-        self._log("⚡ ALPHA BOT v6 listo. Configurá indicadores y presioná ▶","i")
+        self._log("⚡ ALPHA BOT v7 listo. Configurá indicadores y presioná ▶","i")
         self._check_deps()
         self._ui_loop()
 
@@ -849,7 +914,7 @@ class BinomoBot:
         sb.pack(side="right",fill="y")
 
         def make_region_block(parent,title,reg_vars,ocr_key,
-                              ocr_label,test_fn,color,note=""):
+                              test_fn,color,note=""):
             """Genera un bloque de configuración de región con toggle."""
             f=self._panel(parent,title)
             f.pack(fill="x",pady=(0,8),padx=4)
@@ -882,8 +947,8 @@ class BinomoBot:
             tk.Button(btnf,text="✂  Seleccionar en pantalla",
                       bg="#0c2a40",fg=color,font=("Courier",8,"bold"),
                       relief="flat",cursor="hand2",pady=4,
-                      command=lambda rv=reg_vars,k=ocr_key,c=color,tf=test_fn:
-                      self._open_selector(rv,k,tf)).pack(side="left",fill="x",expand=True,padx=(0,4))
+                      command=lambda rv=reg_vars,k=ocr_key,tf=test_fn:
+                      self._open_selector_dispatch(rv,k,tf)).pack(side="left",fill="x",expand=True,padx=(0,4))
             tk.Button(btnf,text="📸 Test OCR",
                       bg=color,fg="#000" if color==C["gold"] else "#fff",
                       font=("Courier",8),relief="flat",cursor="hand2",pady=4,
@@ -892,19 +957,19 @@ class BinomoBot:
 
         # Precio
         make_region_block(sf,"PRECIO EN GRÁFICO",self.r_precio,"precio",
-                          "Precio","",self._test_precio,C["blue"],
+                          self._test_precio,C["blue"],
                           "Se leerá con OCR cada tick")
         # Saldo
         make_region_block(sf,"SALDO DE CUENTA (sup. der.)",self.r_saldo,"saldo",
-                          "Saldo","",self._test_saldo,C["gold"],
+                          self._test_saldo,C["gold"],
                           "Ej: 998.839,00 Arg$")
         # Resultado op
         make_region_block(sf,"RESULTADO OPERACIÓN (popup inf. izq.)",self.r_resultado,
-                          "resultado","","",self._test_resultado,C["purple"],
+                          "resultado",self._test_resultado,C["purple"],
                           "Aparece cerca del calendario tras cada operación")
         # Campo monto
         make_region_block(sf,"CAMPO DE MONTO (donde escribir en Binomo)",
-                          self.r_monto_campo,"monto","","",self._test_monto_campo,
+                          self.r_monto_campo,"monto",self._test_monto_campo,
                           C["yellow"],"El bot hará clic aquí, borrará y escribirá el monto")
 
         # Botones SUBIR/BAJAR
@@ -1113,28 +1178,140 @@ class BinomoBot:
                      fg=C["green"] if ok else C["red"]).pack(side="right")
 
     # ════════════════════════════════════════════════════
-    #   SELECTOR VISUAL
+    #   SELECTOR VISUAL — métodos
     # ════════════════════════════════════════════════════
-    def _open_selector(self,reg_vars,ocr_key,test_fn):
-        labels={
+    def _seleccionar_punto_binomo(self, which):
+        """Alias para seleccionar SUBIR/BAJAR con modo punto."""
+        self._seleccionar_punto_visual(which)
+
+    def _detectar(self, which):
+        def _run():
+            if not PYAUTOGUI_OK:
+                self._log("PyAutoGUI no instalado", "e"); return
+            btn = "SUBIR" if which == "subir" else "BAJAR"
+            self._log(f"Mové el mouse al botón {btn}... (5s)", "w")
+            for i in range(5, 0, -1):
+                x, y = pyautogui.position()
+                self._log(f"  [{i}s] ({x}, {y})", "i")
+                time.sleep(1)
+            x, y = pyautogui.position()
+            if which == "subir":
+                self.root.after(0, lambda: self.x_subir.set(x))
+                self.root.after(0, lambda: self.y_subir.set(y))
+            else:
+                self.root.after(0, lambda: self.x_bajar.set(x))
+                self.root.after(0, lambda: self.y_bajar.set(y))
+            self._log(f"✅ {btn} → ({x}, {y}) guardado", "s")
+        threading.Thread(target=_run, daemon=True).start()
+    def _abrir_selector_visual(self, title, mode, on_complete, on_cancel=None,
+                               min_width=20, min_height=10):
+        if not PIL_OK:
+            self._log("Pillow no está disponible. Uso fallback clásico.", "w")
+            return False
+        try:
+            if self.selector_overlay and self.selector_overlay.winfo_exists():
+                self.selector_overlay.destroy()
+            self.selector_overlay = ScreenSelectionOverlay(
+                self.root,
+                title=title,
+                mode=mode,
+                on_complete=on_complete,
+                on_cancel=on_cancel,
+                min_width=min_width,
+                min_height=min_height
+            )
+            return True
+        except Exception as e:
+            self._log(f"No se pudo abrir el selector visual: {e}", "e")
+            return False
+    def _seleccionar_punto_visual(self, which):
+        btn = "SUBIR" if which == "subir" else "BAJAR"
+
+        def _apply(x, y):
+            if which == "subir":
+                self.x_subir.set(x)
+                self.y_subir.set(y)
+            else:
+                self.x_bajar.set(x)
+                self.y_bajar.set(y)
+            self._log(f"✅ {btn} seleccionado visualmente en ({x}, {y})", "s")
+
+        def _cancel():
+            self._log(f"Selección visual cancelada para {btn}", "w")
+
+        self._log(f"✂ Abrí selector visual para {btn}. Hacé click sobre el botón real.", "i")
+        if not self._abrir_selector_visual(f"Seleccionar {btn}", "point", _apply, _cancel,
+                                           min_width=1, min_height=1):
+            self._detectar(which)
+    def _seleccionar_region_visual(self, setter_x, setter_y, setter_w, setter_h, nombre):
+        def _apply(x, y, w, h):
+            setter_x.set(x)
+            setter_y.set(y)
+            setter_w.set(w)
+            setter_h.set(h)
+            self._log(f"✅ [{nombre}] región guardada: x={x} y={y} w={w} h={h}", "s")
+
+        def _cancel():
+            self._log(f"Selección visual cancelada para [{nombre}]", "w")
+
+        self._log(f"✂ Abrí selector visual para [{nombre}]. Arrastrá para marcar la zona.", "i")
+        if not self._abrir_selector_visual(f"Seleccionar {nombre}", "region", _apply, _cancel):
+            self._detectar_region_genérica(setter_x, setter_y, setter_w, setter_h, nombre)
+    def _detectar_region_genérica(self, setter_x, setter_y, setter_w, setter_h, nombre):
+        def _run():
+            if not PYAUTOGUI_OK:
+                self._log("PyAutoGUI no instalado", "e"); return
+            self._log(f"Mové a esquina superior-izq de [{nombre}] (5s)...", "w")
+            time.sleep(5); x1, y1 = pyautogui.position()
+            self._log(f"Punto 1: ({x1},{y1}). Ahora a esquina inf-der (5s)...", "w")
+            time.sleep(5); x2, y2 = pyautogui.position()
+            w = abs(x2 - x1); h = abs(y2 - y1)
+            self.root.after(0, lambda: setter_x.set(min(x1,x2)))
+            self.root.after(0, lambda: setter_y.set(min(y1,y2)))
+            self.root.after(0, lambda: setter_w.set(max(w,20)))
+            self.root.after(0, lambda: setter_h.set(max(h,10)))
+            self._log(f"✅ [{nombre}]: x={min(x1,x2)} y={min(y1,y2)} w={w} h={h}", "s")
+        threading.Thread(target=_run, daemon=True).start()
+
+
+    def _open_selector_dispatch(self, reg_vars, ocr_key, test_fn):
+        """Despacha al selector visual correcto según el tipo."""
+        labels = {
             "precio":"Precio en gráfico","saldo":"Saldo de cuenta",
-            "resultado":"Resultado operación","monto":"Campo de monto (escritura)",
+            "resultado":"Resultado de operación","monto":"Campo de monto (escritura)",
         }
-        label=labels.get(ocr_key,ocr_key)
-        def on_confirm(x,y,w,h):
+        label = labels.get(ocr_key, ocr_key)
+        def _apply(x, y, w, h):
             reg_vars[0].set(x); reg_vars[1].set(y)
             reg_vars[2].set(w); reg_vars[3].set(h)
-            self._log(f"✅ [{label}]: x={x} y={y} w={w} h={h}","s")
-            self.root.after(400,test_fn)
-        def pcb(x,y,w,h):
-            v=ocr_read_number(x,y,w,h)
-            if v: self._log(f"👁 Preview [{label}]: {v}","i")
-        self.root.withdraw()
-        self.root.after(200,lambda: self._do_selector(on_confirm,label,pcb))
+            self._log(f"✅ [{label}]: x={x} y={y} w={w} h={h}", "s")
+            if test_fn: self.root.after(400, test_fn)
+        def _cancel():
+            self._log(f"Selección cancelada [{label}]", "w")
+        self._seleccionar_region_visual(
+            reg_vars[0], reg_vars[1], reg_vars[2], reg_vars[3], label)
 
-    def _do_selector(self,cb,label,pcb):
-        RegionSelector(callback=cb,label=label,preview_callback=pcb)
-        self.root.after(500,self.root.deiconify)
+    def _detectar_region_ocr(self):
+        self._seleccionar_region_visual(
+            self.r_precio[0], self.r_precio[1], self.r_precio[2], self.r_precio[3],
+            "Precio en gráfico")
+
+    def _detectar_region_saldo(self):
+        self._seleccionar_region_visual(
+            self.r_saldo[0], self.r_saldo[1], self.r_saldo[2], self.r_saldo[3],
+            "Saldo de cuenta")
+
+    def _detectar_region_resultado(self):
+        self._seleccionar_region_visual(
+            self.r_resultado[0], self.r_resultado[1],
+            self.r_resultado[2], self.r_resultado[3],
+            "Resultado de operación")
+
+    def _detectar_region_monto(self):
+        self._seleccionar_region_visual(
+            self.r_monto_campo[0], self.r_monto_campo[1],
+            self.r_monto_campo[2], self.r_monto_campo[3],
+            "Campo de monto")
 
     # ════════════════════════════════════════════════════
     #   OCR TESTS
